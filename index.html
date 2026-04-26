@@ -56,7 +56,7 @@
     </section>
 
     <section class="panel status">
-      <div><strong>ROM:</strong> <span id="romInfo">未选择</span></div>
+      <div><strong>ROM:</strong> <span id="romInfo">WASM 加载中...</span></div>
       <div><strong>Cheats:</strong> <span id="cheatInfo">未选择</span></div>
       <div><strong>Selected:</strong> <span id="selectedInfo">0 / 64, writes 0</span></div>
     </section>
@@ -75,7 +75,7 @@
     <section class="panel controls">
       <button id="patchButton" class="primary" disabled>Patch ROM</button>
       <a id="downloadLink" class="download hidden" download>Download patched ROM</a>
-      <div id="patchStatus" class="patch-status hidden" aria-live="polite"></div>
+      <div id="patchStatus" class="patch-status busy" aria-live="polite">WASM 核心加载中，请稍等。加载完成后才能选择 ROM。</div>
     </section>
 
     <section class="panel log">

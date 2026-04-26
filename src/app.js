@@ -71,6 +71,17 @@
     el.chtFile.disabled = !enabled || state.cheatMode !== 'single';
   }
 
+  function updatePatchAvailability() {
+    if (!state.module) {
+      el.patchButton.disabled = true;
+      return;
+    }
+    el.patchButton.disabled = !state.romBytes;
+    if (!state.romBytes && !el.patchStatus.classList.contains('error')) {
+      setPatchStatus('busy', '请选择一个 .gba ROM 文件，然后再点击 Patch ROM。');
+    }
+  }
+
   function renderCheatMode() {
     el.modeAuto.checked = state.cheatMode === 'auto';
     el.modeSingle.checked = state.cheatMode === 'single';
@@ -299,7 +310,7 @@
       if (state.selected.has(entry.index)) writes += entry.opCount;
     }
     el.selectedInfo.textContent = `${state.selected.size} / ${MAX_SELECTED}, writes ${writes}`;
-    el.patchButton.disabled = !state.romBytes || !state.module;
+    updatePatchAvailability();
   }
 
   async function loadFonts() {
@@ -336,6 +347,7 @@
       state.romFile = file;
       state.romBytes = romBytes;
       el.romInfo.textContent = `${file.name} | ${title || 'NO TITLE'} | ${code} | ${gameId.toString(16).toUpperCase().padStart(8, '0')}`;
+      setPatchStatus('', '');
       log(`ROM loaded: ${file.name}`);
     } finally {
       state.module._free(ptr);
@@ -429,14 +441,18 @@
 
   async function init() {
     if (typeof createPatcherModule !== 'function') {
-      log('patcher_wasm.js 未加载。请先运行 ./build-web.sh 生成 WASM。', true);
+      const msg = 'patcher_wasm.js 未加载。请刷新页面；如果仍失败，可能是网站文件没有完整发布。';
+      setPatchStatus('error', msg);
+      log(msg, true);
       return;
     }
     el.romInfo.textContent = 'WASM 加载中...';
+    setPatchStatus('busy', 'WASM 核心加载中，请稍等。加载完成后才能选择 ROM。');
     state.module = await createPatcherModule();
     log('WASM core loaded');
     el.romFile.disabled = false;
     el.romInfo.textContent = '未选择';
+    setPatchStatus('busy', 'WASM 加载完成。请选择一个 .gba ROM 文件。');
     renderCheatMode();
     updateSelectedInfo();
   }
@@ -507,6 +523,7 @@
     state.module = null;
     el.romFile.disabled = true;
     el.romInfo.textContent = 'WASM 加载失败';
+    setPatchStatus('error', `WASM 加载失败：${err.message}。请刷新页面；如果仍失败，换用 Chrome/Edge/Firefox 或检查浏览器是否禁止 WebAssembly。`);
     log(`WASM core load failed: ${err.message}`, true);
     alert(`WASM 加载失败: ${err.message}`);
   });
