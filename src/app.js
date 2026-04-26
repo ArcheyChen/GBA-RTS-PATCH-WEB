@@ -125,9 +125,53 @@
     return (file.webkitRelativePath || file.name).replace(/\\/g, '/');
   }
 
-  function findFileBySuffix(files, suffix) {
-    const wanted = suffix.toLowerCase();
-    return files.find((f) => pathOf(f).toLowerCase().endsWith(wanted)) || null;
+  function lowerPathOf(file) {
+    return pathOf(file).toLowerCase();
+  }
+
+  function basenameOfPath(path) {
+    const idx = path.lastIndexOf('/');
+    return idx >= 0 ? path.slice(idx + 1) : path;
+  }
+
+  function pathSegments(file) {
+    return lowerPathOf(file).split('/').filter(Boolean);
+  }
+
+  function scoreIndexFile(file) {
+    const segs = pathSegments(file);
+    let score = 0;
+    if (segs.includes('cheat')) score += 20;
+    if (basenameOfPath(segs.join('/')) === 'gameid2cht.bin') score += 10;
+    score -= segs.length;
+    return score;
+  }
+
+  function scoreChtFile(file, decoded) {
+    const segs = pathSegments(file);
+    const base = segs[segs.length - 1] || '';
+    if (base !== `${decoded.digits}.cht`) return -1;
+    let score = 8;
+    if (segs.includes('cheat')) score += 20;
+    if (segs.includes(decoded.folder.toLowerCase())) score += 20;
+    if (segs.includes('chn')) score += 12;
+    if (segs.includes('eng')) score += 8;
+    if (segs.length >= 2 && segs[segs.length - 2] === decoded.folder.toLowerCase()) score += 20;
+    score -= segs.length;
+    return score;
+  }
+
+  function bestByScore(files, scoreFn) {
+    let best = null;
+    let bestScore = -1;
+    for (const file of files) {
+      const score = scoreFn(file);
+      if (score > bestScore) {
+        best = file;
+        bestScore = score;
+      }
+    }
+    return bestScore >= 0 ? best : null;
   }
 
   function readIndexLookup(indexBytes, gameId) {
@@ -155,18 +199,21 @@
 
   async function resolveChtFromDirectory(files, romBytes) {
     const gameId = gameIdFromRom(romBytes);
-    const indexFile = findFileBySuffix(files, '/CHEAT/GameID2cht.bin') || findFileBySuffix(files, 'GameID2cht.bin');
-    if (!indexFile) throw new Error('EZ cheat 目录中没有找到 CHEAT/GameID2cht.bin');
+    const indexFile = bestByScore(files, (file) => {
+      return basenameOfPath(lowerPathOf(file)) === 'gameid2cht.bin' ? scoreIndexFile(file) : -1;
+    });
+    if (!indexFile) throw new Error('EZ cheat 目录中没有找到 GameID2cht.bin。请选择 EZ/Omega 金手指合集根目录、CHEAT 目录，或改用单个 .cht 文件。');
     const indexBytes = new Uint8Array(await indexFile.arrayBuffer());
     const chtId = readIndexLookup(indexBytes, gameId);
     if (!chtId) throw new Error(`GameID ${gameId.toString(16).toUpperCase().padStart(8, '0')} 没有匹配的 EZ cheat 条目`);
     const decoded = decodeChtId(chtId);
     if (!decoded) throw new Error(`无法解码 EZ cheat id 0x${chtId.toString(16)}`);
-    const chnSuffix = `/CHEAT/Chn/${decoded.folder}/${decoded.digits}.cht`.toLowerCase();
-    const engSuffix = `/CHEAT/Eng/${decoded.folder}/${decoded.digits}.cht`.toLowerCase();
-    const chtFile = files.find((f) => pathOf(f).toLowerCase().endsWith(chnSuffix)) ||
-                    files.find((f) => pathOf(f).toLowerCase().endsWith(engSuffix));
-    if (!chtFile) throw new Error(`索引匹配 ${decoded.digits}.cht，但目录中没有找到对应 Chn/Eng 文件`);
+    const chtFile = bestByScore(files, (file) => scoreChtFile(file, decoded));
+    if (!chtFile) {
+      const sameName = files.filter((file) => basenameOfPath(lowerPathOf(file)) === `${decoded.digits}.cht`).slice(0, 4).map(pathOf);
+      const hint = sameName.length ? ` 找到同名文件但路径不标准: ${sameName.join(' | ')}` : '';
+      throw new Error(`索引匹配 ${decoded.folder}/${decoded.digits}.cht，但目录中没有找到对应 Chn/Eng 文件。${hint}`);
+    }
     const bytes = new Uint8Array(await chtFile.arrayBuffer());
     return { text: decodeText(bytes), source: pathOf(chtFile) };
   }
@@ -267,14 +314,19 @@
     setDownloadHidden();
     clearCheatState('ROM changed: cheat selection cleared');
     el.chtFile.value = '';
-    state.romFile = file;
-    state.romBytes = new Uint8Array(await file.arrayBuffer());
-    const ptr = allocBytes(state.romBytes);
+    state.romFile = null;
+    state.romBytes = null;
+    renderCheatMode();
+
+    const romBytes = new Uint8Array(await file.arrayBuffer());
+    const ptr = allocBytes(romBytes);
     try {
-      if (!state.module._wasm_get_rom_info(ptr, state.romBytes.length)) throw new Error(wasmError());
+      if (!state.module._wasm_get_rom_info(ptr, romBytes.length)) throw new Error(wasmError());
       const title = wasmString(state.module._wasm_rom_title()).replace(/\0/g, '');
       const code = wasmString(state.module._wasm_rom_game_code()).replace(/\0/g, '');
       const gameId = state.module._wasm_rom_game_id() >>> 0;
+      state.romFile = file;
+      state.romBytes = romBytes;
       el.romInfo.textContent = `${file.name} | ${title || 'NO TITLE'} | ${code} | ${gameId.toString(16).toUpperCase().padStart(8, '0')}`;
       log(`ROM loaded: ${file.name}`);
     } finally {
@@ -300,7 +352,14 @@
   }
 
   async function patchRom() {
-    if (!state.romBytes) return;
+    if (!state.module) {
+      alert('WASM core 还没加载完成，请稍等几秒后再试。');
+      return;
+    }
+    if (!state.romBytes) {
+      alert('ROM 没有加载。请重新选择 .gba 文件。');
+      return;
+    }
     setDownloadHidden();
     const ptrs = [];
     try {
@@ -356,13 +415,24 @@
       log('patcher_wasm.js 未加载。请先运行 ./build-web.sh 生成 WASM。', true);
       return;
     }
+    el.romInfo.textContent = 'WASM 加载中...';
     state.module = await createPatcherModule();
     log('WASM core loaded');
+    el.romFile.disabled = false;
+    el.romInfo.textContent = '未选择';
     renderCheatMode();
     updateSelectedInfo();
   }
 
-  el.romFile.addEventListener('change', (e) => handleRomFile(e.target.files[0]).catch((err) => log(err.message, true)));
+  el.romFile.addEventListener('change', (e) => handleRomFile(e.target.files[0]).catch((err) => {
+    state.romFile = null;
+    state.romBytes = null;
+    el.romInfo.textContent = 'ROM 加载失败';
+    renderCheatMode();
+    updateSelectedInfo();
+    log(err.message, true);
+    alert(`ROM 加载失败: ${err.message}`);
+  }));
   el.modeAuto.addEventListener('change', async () => {
     if (!el.modeAuto.checked) return;
     state.cheatMode = 'auto';
@@ -416,5 +486,11 @@
   });
   el.patchButton.addEventListener('click', patchRom);
 
-  init();
+  init().catch((err) => {
+    state.module = null;
+    el.romFile.disabled = true;
+    el.romInfo.textContent = 'WASM 加载失败';
+    log(`WASM core load failed: ${err.message}`, true);
+    alert(`WASM 加载失败: ${err.message}`);
+  });
 })();
