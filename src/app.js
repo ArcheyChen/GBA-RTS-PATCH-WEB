@@ -31,6 +31,7 @@
     clearCheats: document.getElementById('clearCheats'),
     patchButton: document.getElementById('patchButton'),
     downloadLink: document.getElementById('downloadLink'),
+    patchStatus: document.getElementById('patchStatus'),
     log: document.getElementById('log'),
   };
 
@@ -45,6 +46,12 @@
     if (el.downloadLink.href) URL.revokeObjectURL(el.downloadLink.href);
     el.downloadLink.removeAttribute('href');
     el.downloadLink.classList.add('hidden');
+  }
+
+  function setPatchStatus(kind, text) {
+    el.patchStatus.className = `patch-status ${kind || ''}`.trim();
+    el.patchStatus.textContent = text || '';
+    el.patchStatus.classList.toggle('hidden', !text);
   }
 
   function clearCheatState(message) {
@@ -312,6 +319,7 @@
   async function handleRomFile(file) {
     if (!file) return;
     setDownloadHidden();
+    setPatchStatus('', '');
     clearCheatState('ROM changed: cheat selection cleared');
     el.chtFile.value = '';
     state.romFile = null;
@@ -353,14 +361,20 @@
 
   async function patchRom() {
     if (!state.module) {
-      alert('WASM core 还没加载完成，请稍等几秒后再试。');
+      const msg = 'WASM core 还没加载完成，请稍等几秒后再试。';
+      setPatchStatus('error', msg);
+      alert(msg);
       return;
     }
     if (!state.romBytes) {
-      alert('ROM 没有加载。请重新选择 .gba 文件。');
+      const msg = 'ROM 没有加载。请重新选择 .gba 文件。';
+      setPatchStatus('error', msg);
+      alert(msg);
       return;
     }
     setDownloadHidden();
+    setPatchStatus('busy', '正在打补丁，请稍等...');
+    el.patchButton.disabled = true;
     const ptrs = [];
     try {
       let chtPtr = 0;
@@ -400,13 +414,16 @@
       el.downloadLink.href = url;
       el.downloadLink.download = name;
       el.downloadLink.classList.remove('hidden');
+      setPatchStatus('ok', `Patch 成功：${name}。请点击下载。`);
       log(`Patched: ${name}`);
       log(`Payload offset 0x${(state.module._wasm_patch_payload_offset() >>> 0).toString(16).toUpperCase()}, IRQ refs ${state.module._wasm_patch_irq_ref_count() >>> 0}, cheats ${state.module._wasm_patch_cheat_count() >>> 0}, writes ${state.module._wasm_patch_cheat_op_count() >>> 0}`);
     } catch (e) {
+      setPatchStatus('error', `Patch 失败：${e.message}`);
       log(`Patch failed: ${e.message}`, true);
       alert(e.message);
     } finally {
       freeAll(ptrs);
+      updateSelectedInfo();
     }
   }
 

@@ -375,6 +375,35 @@ button:disabled {
   color: #fffefa;
 }
 
+.patch-status {
+  flex: 1 1 280px;
+  min-width: min(100%, 280px);
+  padding: 12px 14px;
+  border: 1px solid rgba(77, 84, 184, 0.26);
+  border-radius: 14px;
+  color: #2c2e55;
+  background: rgba(255, 255, 255, 0.62);
+  line-height: 1.55;
+}
+
+.patch-status.ok {
+  border-color: rgba(57, 139, 86, 0.36);
+  background: rgba(225, 250, 232, 0.76);
+  color: #245c38;
+}
+
+.patch-status.error {
+  border-color: rgba(201, 40, 55, 0.36);
+  background: rgba(255, 231, 234, 0.8);
+  color: var(--danger);
+}
+
+.patch-status.busy {
+  border-color: rgba(77, 84, 184, 0.4);
+  background: rgba(235, 237, 255, 0.78);
+  color: var(--accent);
+}
+
 .cheat-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
