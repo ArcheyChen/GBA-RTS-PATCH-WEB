@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GBA RTS Web Patcher</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">GBA RTS Patch</p>
+        <h1>Ausar's RTS Web Patcher</h1>
+        <p class="lead">纯浏览器本地处理 ROM 和 EZ/Omega cheat 文件；文件不会上传到服务器。</p>
+      </div>
+      <div class="badge">WASM CORE</div>
+    </section>
+
+    <section class="panel notice">
+      <h2>使用说明 / Notice</h2>
+      <ol>
+        <li>本 patcher 仅支持 CHIS 1.0V 烧录卡，或任何兼容 <strong>128KB + 512KB SRAM</strong> 布局、并通过 <strong>0x09000000</strong> 写入 bank id 进行 SRAM 切 BANK 的卡带。</li>
+        <li>请先选择要打补丁的 GBA 游戏。当前仅直接支持 SRAM 存档方式的游戏；EEPROM、Flash 等其他存档格式需要先转换或打 SRAM 存档补丁。</li>
+        <li>(若要使用金手指功能)选择 EZ-Flash 金手指合集目录，或选择单个 `.cht` 文件。目录模式会在浏览器本地用 GameID 自动匹配对应金手指文件。</li>
+        <li>点击 <strong>Patch ROM</strong>，然后下载生成的补丁后游戏文件。</li>
+      </ol>
+      <p>所有处理均在你的浏览器本地完成，ROM、存档和金手指文件不会上传到任何服务器。</p>
+      <p>补丁文件中使用的字体来自开源字体 <a href="https://github.com/TakWolf/fusion-pixel-font" target="_blank" rel="noreferrer">融合像素字体 / Fusion Pixel Font</a> 以及 <a href="https://ggbot.itch.io/public-pixel-font" target="_blank" rel="noreferrer">Public Pixel</a>。</p>
+      <p>未经作者本人许可，禁止将本项目或其衍生版本用于商业用途。使用本项目的衍生项目应保持开源，并保留原项目署名和识别字符串。</p>
+      <p>本项目按“原样”提供，不对功能、兼容性、稳定性、数据安全性或特定用途适用性作出任何明示或暗示保证。使用本工具造成的存档丢失、游戏异常、卡带兼容问题或其他风险，由使用者自行承担。</p>
+    </section>
+
+    <section class="panel file-flow">
+      <label class="pick rom-pick">
+        <span>1. GBA ROM</span>
+        <input id="romFile" type="file" accept=".gba">
+      </label>
+      <div class="cheat-source">
+        <div class="mode-line">
+          <strong>2. Cheat source</strong>
+          <label><input id="modeAuto" type="radio" name="cheatMode" value="auto" checked disabled> 自动匹配 EZ/Omega 目录</label>
+          <label><input id="modeSingle" type="radio" name="cheatMode" value="single" disabled> 单个 .cht 文件</label>
+        </div>
+        <label id="autoPick" class="pick">
+          <span>选择 EZ/Omega CHEAT 目录</span>
+          <input id="cheatDir" type="file" webkitdirectory directory multiple disabled>
+          <small>浏览器本地扫描 GameID2cht.bin 和 Chn/Eng/*.cht，不会上传。</small>
+        </label>
+        <label id="singlePick" class="pick hidden">
+          <span>选择单个 .cht</span>
+          <input id="chtFile" type="file" accept=".cht,.txt" disabled>
+          <small>如果你已经知道对应文件，直接选择它。</small>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel status">
+      <div><strong>ROM:</strong> <span id="romInfo">未选择</span></div>
+      <div><strong>Cheats:</strong> <span id="cheatInfo">未选择</span></div>
+      <div><strong>Selected:</strong> <span id="selectedInfo">0 / 64, writes 0</span></div>
+    </section>
+
+    <section id="cheatPanel" class="panel cheats hidden">
+      <div class="toolbar">
+        <h2>Cheat Selection</h2>
+        <div class="actions">
+          <button id="selectFirst">选择前 64</button>
+          <button id="clearCheats">清空</button>
+        </div>
+      </div>
+      <div id="cheatList" class="cheat-list"></div>
+    </section>
+
+    <section class="panel controls">
+      <button id="patchButton" class="primary" disabled>Patch ROM</button>
+      <a id="downloadLink" class="download hidden" download>Download patched ROM</a>
+    </section>
+
+    <section class="panel log">
+      <h2>Log</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <script src="patcher_wasm.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
