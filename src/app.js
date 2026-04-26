@@ -1,5 +1,6 @@
 (function () {
   const MAX_SELECTED = 64;
+  const CHEATS_PER_PAGE = 100;
   const state = {
     module: null,
     romFile: null,
@@ -12,6 +13,7 @@
     dirFiles: [],
     fonts: null,
     cheatMode: 'auto',
+    cheatPage: 0,
   };
 
   const el = {
@@ -28,7 +30,11 @@
     cheatPanel: document.getElementById('cheatPanel'),
     cheatList: document.getElementById('cheatList'),
     selectFirst: document.getElementById('selectFirst'),
+    selectPage: document.getElementById('selectPage'),
     clearCheats: document.getElementById('clearCheats'),
+    prevPage: document.getElementById('prevPage'),
+    nextPage: document.getElementById('nextPage'),
+    pageInfo: document.getElementById('pageInfo'),
     patchButton: document.getElementById('patchButton'),
     downloadLink: document.getElementById('downloadLink'),
     patchStatus: document.getElementById('patchStatus'),
@@ -60,6 +66,7 @@
     state.chtSource = '';
     state.cheatEntries = [];
     state.selected = new Set();
+    state.cheatPage = 0;
     renderCheats();
     if (message) log(message);
   }
@@ -255,6 +262,7 @@
       state.chtText = text;
       state.chtSource = source;
       state.cheatEntries = entries;
+      state.cheatPage = 0;
       state.selected = new Set(entries.slice(0, Math.min(MAX_SELECTED, entries.length)).map((x) => x.index));
       renderCheats();
       log(`Cheat parsed: ${source}, entries ${entries.length}`);
@@ -268,12 +276,25 @@
     if (!state.cheatEntries.length) {
       el.cheatPanel.classList.add('hidden');
       el.cheatInfo.textContent = state.chtSource ? `${state.chtSource}: 0 entries` : '未选择';
+      el.pageInfo.textContent = 'Page 0 / 0';
+      el.prevPage.disabled = true;
+      el.nextPage.disabled = true;
+      el.selectPage.disabled = true;
       updateSelectedInfo();
       return;
     }
     el.cheatPanel.classList.remove('hidden');
+    const totalPages = Math.max(1, Math.ceil(state.cheatEntries.length / CHEATS_PER_PAGE));
+    if (state.cheatPage >= totalPages) state.cheatPage = totalPages - 1;
+    if (state.cheatPage < 0) state.cheatPage = 0;
+    const start = state.cheatPage * CHEATS_PER_PAGE;
+    const end = Math.min(start + CHEATS_PER_PAGE, state.cheatEntries.length);
+    el.pageInfo.textContent = `Page ${state.cheatPage + 1} / ${totalPages} (${start + 1}-${end} / ${state.cheatEntries.length})`;
+    el.prevPage.disabled = state.cheatPage === 0;
+    el.nextPage.disabled = state.cheatPage + 1 >= totalPages;
+    el.selectPage.disabled = state.selected.size >= MAX_SELECTED;
     const frag = document.createDocumentFragment();
-    for (const entry of state.cheatEntries) {
+    for (const entry of state.cheatEntries.slice(start, end)) {
       const row = document.createElement('label');
       row.className = 'cheat-row';
       const cb = document.createElement('input');
@@ -291,6 +312,7 @@
           state.selected.delete(entry.index);
         }
         updateSelectedInfo();
+        renderPageControls();
       });
       const name = document.createElement('span');
       name.textContent = entry.name;
@@ -301,7 +323,28 @@
     }
     el.cheatList.append(frag);
     el.cheatInfo.textContent = `${state.chtSource}: ${state.cheatEntries.length} entries`;
+    renderPageControls();
     updateSelectedInfo();
+  }
+
+  function renderPageControls() {
+    if (!state.cheatEntries.length) return;
+    el.selectPage.disabled = state.selected.size >= MAX_SELECTED;
+  }
+
+  function selectEntries(entries) {
+    let added = 0;
+    for (const entry of entries) {
+      if (state.selected.size >= MAX_SELECTED) break;
+      if (!state.selected.has(entry.index)) {
+        state.selected.add(entry.index);
+        added++;
+      }
+    }
+    if (!added && state.selected.size >= MAX_SELECTED) {
+      log(`最多只能选择 ${MAX_SELECTED} 条金手指`, true);
+    }
+    renderCheats();
   }
 
   function updateSelectedInfo() {
@@ -510,12 +553,29 @@
     }
   });
   el.selectFirst.addEventListener('click', () => {
-    state.selected = new Set(state.cheatEntries.slice(0, Math.min(MAX_SELECTED, state.cheatEntries.length)).map((x) => x.index));
-    renderCheats();
+    state.selected.clear();
+    selectEntries(state.cheatEntries);
+  });
+  el.selectPage.addEventListener('click', () => {
+    const start = state.cheatPage * CHEATS_PER_PAGE;
+    selectEntries(state.cheatEntries.slice(start, start + CHEATS_PER_PAGE));
   });
   el.clearCheats.addEventListener('click', () => {
     state.selected.clear();
     renderCheats();
+  });
+  el.prevPage.addEventListener('click', () => {
+    if (state.cheatPage > 0) {
+      state.cheatPage--;
+      renderCheats();
+    }
+  });
+  el.nextPage.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(state.cheatEntries.length / CHEATS_PER_PAGE));
+    if (state.cheatPage + 1 < totalPages) {
+      state.cheatPage++;
+      renderCheats();
+    }
   });
   el.patchButton.addEventListener('click', patchRom);
 

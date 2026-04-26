@@ -325,6 +325,22 @@ h1 {
   margin-bottom: 14px;
 }
 
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+.pager span {
+  flex: 1;
+  min-width: 180px;
+  text-align: center;
+  color: var(--accent);
+  font-weight: 900;
+}
+
 .actions,
 .controls {
   display: flex;
