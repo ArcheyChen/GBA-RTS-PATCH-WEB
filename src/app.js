@@ -12,6 +12,8 @@
     selected: new Set(),
     dirFiles: [],
     fonts: null,
+    fontsPromise: null,
+    romMeta: null,
     cheatMode: 'auto',
     cheatPage: 0,
   };
@@ -58,6 +60,19 @@
     el.patchStatus.className = `patch-status ${kind || ''}`.trim();
     el.patchStatus.textContent = text || '';
     el.patchStatus.classList.toggle('hidden', !text);
+  }
+
+  function formatBytes(bytes) {
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${bytes}B`;
+  }
+
+  function safeDownloadName() {
+    if (state.romMeta && state.romMeta.code) {
+      return `${state.romMeta.code}_${state.romMeta.gameIdHex}_rts_keypad.gba`;
+    }
+    return 'patched_rts_keypad.gba';
   }
 
   function clearCheatState(message) {
@@ -266,6 +281,9 @@
       state.selected = new Set(entries.slice(0, Math.min(MAX_SELECTED, entries.length)).map((x) => x.index));
       renderCheats();
       log(`Cheat parsed: ${source}, entries ${entries.length}`);
+      if (state.selected.size > 0) {
+        loadFonts({ background: true }).catch((err) => log(`Font preload failed: ${err.message}`, true));
+      }
     } finally {
       state.module._free(ptr);
     }
@@ -356,18 +374,35 @@
     updatePatchAvailability();
   }
 
-  async function loadFonts() {
+  async function loadFonts(options = {}) {
+    const background = !!options.background;
     if (state.fonts) return state.fonts;
-    const [zhRes, latinRes] = await Promise.all([
-      fetch('fonts/fusion-pixel-8px-monospaced-zh_hans.bdf'),
-      fetch('fonts/fusion-pixel-8px-monospaced-latin.bdf'),
-    ]);
-    if (!zhRes.ok || !latinRes.ok) throw new Error('无法加载 Web 字库。请先运行 build-web.sh 复制 fonts。');
-    state.fonts = {
-      zh: await zhRes.text(),
-      latin: await latinRes.text(),
-    };
-    return state.fonts;
+    if (state.fontsPromise) return state.fontsPromise;
+    if (!background) {
+      setPatchStatus('busy', '已选择金手指，正在下载游戏内菜单字库（约 6.2MB）。国内访问 GitHub Pages 可能较慢，请稍等...');
+    }
+    log('Loading cheat menu fonts...');
+    const started = performance.now();
+    state.fontsPromise = (async () => {
+      const [zhRes, latinRes] = await Promise.all([
+        fetch('fonts/fusion-pixel-8px-monospaced-zh_hans.bdf'),
+        fetch('fonts/fusion-pixel-8px-monospaced-latin.bdf'),
+      ]);
+      if (!zhRes.ok || !latinRes.ok) throw new Error(`无法加载 Web 字库：HTTP ${zhRes.status}/${latinRes.status}`);
+      const fonts = {
+        zh: await zhRes.text(),
+        latin: await latinRes.text(),
+      };
+      state.fonts = fonts;
+      log(`Fonts loaded in ${Math.round(performance.now() - started)}ms`);
+      return fonts;
+    })();
+    try {
+      return await state.fontsPromise;
+    } catch (err) {
+      state.fontsPromise = null;
+      throw err;
+    }
   }
 
   async function handleRomFile(file) {
@@ -378,8 +413,10 @@
     el.chtFile.value = '';
     state.romFile = null;
     state.romBytes = null;
+    state.romMeta = null;
     renderCheatMode();
 
+    log(`Reading ROM file: ${file.name}, ${formatBytes(file.size)}`);
     const romBytes = new Uint8Array(await file.arrayBuffer());
     const ptr = allocBytes(romBytes);
     try {
@@ -387,9 +424,11 @@
       const title = wasmString(state.module._wasm_rom_title()).replace(/\0/g, '');
       const code = wasmString(state.module._wasm_rom_game_code()).replace(/\0/g, '');
       const gameId = state.module._wasm_rom_game_id() >>> 0;
+      const gameIdHex = gameId.toString(16).toUpperCase().padStart(8, '0');
       state.romFile = file;
       state.romBytes = romBytes;
-      el.romInfo.textContent = `${file.name} | ${title || 'NO TITLE'} | ${code} | ${gameId.toString(16).toUpperCase().padStart(8, '0')}`;
+      state.romMeta = { title, code, gameIdHex };
+      el.romInfo.textContent = `${file.name} | ${title || 'NO TITLE'} | ${code} | ${gameIdHex}`;
       setPatchStatus('', '');
       log(`ROM loaded: ${file.name}`);
     } finally {
@@ -428,7 +467,7 @@
       return;
     }
     setDownloadHidden();
-    setPatchStatus('busy', '正在打补丁，请稍等...');
+    setPatchStatus('busy', state.selected.size > 0 ? '正在准备金手指数据...' : '未选择金手指，跳过字库下载，正在打补丁...');
     el.patchButton.disabled = true;
     const ptrs = [];
     try {
@@ -443,6 +482,7 @@
 
       if (selected.length > 0) {
         const fonts = await loadFonts();
+        setPatchStatus('busy', '字库已加载，正在编译金手指并打补丁...');
         const chtBytes = utf8Bytes(state.chtText);
         const zhBytes = utf8Bytes(fonts.zh);
         const latinBytes = utf8Bytes(fonts.latin);
@@ -453,6 +493,7 @@
         selectedPtr = allocBytes(new Uint8Array(selectedU32.buffer)); ptrs.push(selectedPtr);
       }
 
+      setPatchStatus('busy', '正在扫描 ROM 并写入 payload...');
       const romPtr = allocBytes(state.romBytes); ptrs.push(romPtr);
       if (!state.module._wasm_patch_rom(romPtr, state.romBytes.length, chtPtr, chtLen,
                                         selectedPtr, selected.length, zhPtr, zhLen, latinPtr, latinLen)) {
@@ -465,7 +506,7 @@
 
       const blob = new Blob([out], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
-      const name = state.romFile.name.replace(/\.gba$/i, '') + '_rts_keypad.gba';
+      const name = safeDownloadName();
       el.downloadLink.href = url;
       el.downloadLink.download = name;
       el.downloadLink.classList.remove('hidden');
